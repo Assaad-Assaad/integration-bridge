@@ -1,0 +1,17 @@
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\config\RabbitMQConfig.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\fossbilling\FossBillingApiClient.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\fossbilling\FossBillingReceiver.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\fossbilling\FossBillingSender.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\IntegrationBridgeApplication.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\odoo\OdooApiClient.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\odoo\OdooSender.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\sendgrid\SendGridReceiver.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\HeartbeatSender.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\model\CustomerInfo.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\model\EmailMessage.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\model\HeartbeatMessage.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\model\InvoiceItem.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\model\SaleItem.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\model\SaleMessage.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\ProcessedSalesTracker.java
+C:\Users\musam\integration-bridge\src\main\java\be\ehb\integrationbridge\shared\XmlUtils.java

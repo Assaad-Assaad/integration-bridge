@@ -1,0 +1,17 @@
+be\ehb\integrationbridge\odoo\OdooApiClient.class
+be\ehb\integrationbridge\shared\model\HeartbeatMessage.class
+be\ehb\integrationbridge\shared\model\EmailMessage.class
+be\ehb\integrationbridge\fossbilling\FossBillingApiClient.class
+be\ehb\integrationbridge\fossbilling\FossBillingReceiver.class
+be\ehb\integrationbridge\IntegrationBridgeApplication.class
+be\ehb\integrationbridge\fossbilling\FossBillingSender.class
+be\ehb\integrationbridge\odoo\OdooSender.class
+be\ehb\integrationbridge\sendgrid\SendGridReceiver.class
+be\ehb\integrationbridge\shared\model\SaleMessage.class
+be\ehb\integrationbridge\shared\XmlUtils.class
+be\ehb\integrationbridge\shared\model\SaleItem.class
+be\ehb\integrationbridge\shared\model\CustomerInfo.class
+be\ehb\integrationbridge\config\RabbitMQConfig.class
+be\ehb\integrationbridge\shared\model\InvoiceItem.class
+be\ehb\integrationbridge\shared\HeartbeatSender.class
+be\ehb\integrationbridge\shared\ProcessedSalesTracker.class
