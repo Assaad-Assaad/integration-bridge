@@ -25,3 +25,9 @@ replay_pid*
 
 # Environment variables (secrets)
 .env
+
+# Build output
+target/
+
+# IDE files
+.idea/
