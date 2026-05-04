@@ -2,7 +2,7 @@ package be.ehb.integrationbridge.fossbilling;
 
 import be.ehb.integrationbridge.config.RabbitMQConfig;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
-import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -15,17 +15,7 @@ import java.util.Map;
 
 /**
  * Listens on the new_sales queue for sale messages published by OdooSender.
- *
- * For each message:
- *   1. Parse the XML into a SaleMessage
- *   2. Validate: skip if no customer email (anonymous sale)
- *   3. Find or create the customer in FossBilling
- *   4. Create a draft invoice
- *   5. Add all purchased items as invoice lines
- *   6. Approve the invoice
- *   7. Pass details to FossBillingSender → send_email queue
- *
- * Retry strategy: up to 3 attempts, then NACK → new_sales.dlq
+ * Uses JSON deserialization via ObjectMapper.
  */
 @Component
 public class FossBillingReceiver {
@@ -42,12 +32,8 @@ public class FossBillingReceiver {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
-    // XmlMapper because models use @XmlRootElement (JAXB/XML annotations)
-    private final XmlMapper xmlMapper = new XmlMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * Main listener — triggered automatically when a message arrives on new_sales.
-     */
     @RabbitListener(queues = RabbitMQConfig.NEW_SALES_QUEUE)
     public void onNewSale(Message message) {
         String body = new String(message.getBody());
@@ -57,18 +43,19 @@ public class FossBillingReceiver {
         int retryCount = getRetryCount(message);
 
         try {
-            // Step 1: Parse the incoming XML message into SaleMessage
-            SaleMessage sale = xmlMapper.readValue(body, SaleMessage.class);
-            log.info("Processing saleId={}, posReference={}, customer={}",
-                    sale.getSaleId(), sale.getPosReference(),
+            // Step 1: Parse JSON into SaleMessage
+            SaleMessage sale = objectMapper.readValue(body, SaleMessage.class);
+            log.info("Processing saleId={}, customer={}",
+                    sale.getSaleId(),
                     sale.getCustomer() != null ? sale.getCustomer().getEmail() : "null");
 
-            // Step 2: Skip anonymous sales (no customer linked to the order)
+            // Step 2: Skip anonymous sales
             if (sale.getCustomer() == null
                     || sale.getCustomer().getEmail() == null
                     || sale.getCustomer().getEmail().isBlank()) {
-                log.warn("Sale {} has no customer email — skipping (anonymous sale)", sale.getSaleId());
-                return; // ACK — this is expected behaviour per design doc
+                log.warn("Sale {} has no customer email — skipping (anonymous sale)",
+                        sale.getSaleId());
+                return;
             }
 
             // Step 3: Find or create customer in FossBilling
@@ -78,20 +65,20 @@ public class FossBillingReceiver {
             // Step 4: Create draft invoice
             Integer invoiceId = apiClient.createInvoice(clientId, sale);
 
-            // Step 5: Add all purchased items as invoice lines
+            // Step 5: Add all items
             apiClient.addAllItems(invoiceId, sale.getItems());
 
-            // Step 6: Approve the invoice (draft → finalized)
+            // Step 6: Approve invoice
             apiClient.approveInvoice(invoiceId);
 
-            // Step 7: Fetch finalized invoice to get the assigned invoice number
+            // Step 7: Get invoice number
             Map<String, Object> invoiceData = apiClient.getInvoice(invoiceId);
             String invoiceNumber = String.valueOf(invoiceData.get("nr"));
 
             log.info("Invoice created and approved: invoiceId={}, invoiceNumber={}",
                     invoiceId, invoiceNumber);
 
-            // Step 8: Publish to send_email queue via FossBillingSender
+            // Step 8: Publish to send_email queue
             sender.publishEmailMessage(sale, invoiceId, invoiceNumber);
 
         } catch (Exception e) {
@@ -101,10 +88,6 @@ public class FossBillingReceiver {
         }
     }
 
-    /**
-     * On failure: requeue with incremented retry count up to MAX_RETRIES.
-     * After that, throw so Spring NACK's the message → RabbitMQ routes to new_sales.dlq.
-     */
     private void handleFailure(Message message, String body, int retryCount, Exception e) {
         if (retryCount < MAX_RETRIES) {
             log.warn("Requeueing message, retry {}/{}", retryCount + 1, MAX_RETRIES);

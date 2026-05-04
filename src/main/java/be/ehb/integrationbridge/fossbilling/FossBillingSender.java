@@ -5,7 +5,7 @@ import be.ehb.integrationbridge.shared.model.EmailMessage;
 import be.ehb.integrationbridge.shared.model.InvoiceItem;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
-import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -17,19 +17,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Publishes an EmailMessage to the send_email queue after a successful invoice creation.
- * The SendGridReceiver will consume this and send the confirmation email to the customer.
- *
- * EmailMessage fields used:
- *   - eventType    → "INVOICE_CREATED"
- *   - source       → "fossbilling"
- *   - invoiceId    → the FossBilling invoice ID (int)
- *   - invoiceNumber→ the human-readable invoice number from FossBilling
- *   - timestamp    → current date
- *   - customer     → CustomerInfo from the original sale
- *   - items        → List<InvoiceItem> built from SaleItems
- *   - total        → amountTotal from the original sale
- *   - dueAt        → payment due date (30 days from today)
+ * Publishes an EmailMessage to the send_email queue after successful invoice creation.
+ * Uses JSON serialization via ObjectMapper.
  */
 @Component
 public class FossBillingSender {
@@ -39,15 +28,8 @@ public class FossBillingSender {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
-    private final XmlMapper xmlMapper = new XmlMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
-    /**
-     * Build an EmailMessage and publish it to the send_email queue.
-     *
-     * @param sale          The original SaleMessage from Odoo
-     * @param invoiceId     The FossBilling invoice ID (int)
-     * @param invoiceNumber The human-readable invoice number from FossBilling
-     */
     public void publishEmailMessage(SaleMessage sale, int invoiceId, String invoiceNumber) {
         try {
             // Validate email before publishing
@@ -63,28 +45,28 @@ public class FossBillingSender {
             if (sale.getItems() != null) {
                 for (SaleItem saleItem : sale.getItems()) {
                     InvoiceItem item = new InvoiceItem();
-                    item.setTitle(saleItem.getProduct());       // SaleItem.product
-                    item.setQuantity(saleItem.getQuantity());   // SaleItem.quantity
-                    item.setPrice(saleItem.getPriceUnit());     // SaleItem.priceUnit
+                    item.setTitle(saleItem.getProduct());
+                    item.setQuantity(saleItem.getQuantity());
+                    item.setPrice(saleItem.getPriceUnit());
                     invoiceItems.add(item);
                 }
             }
 
-            // Build the EmailMessage matching the exact fields of the model
+            // Build EmailMessage
             EmailMessage emailMessage = new EmailMessage();
             emailMessage.setEventType("INVOICE_CREATED");
             emailMessage.setSource("fossbilling");
             emailMessage.setInvoiceId(invoiceId);
             emailMessage.setInvoiceNumber(invoiceNumber);
             emailMessage.setTimestamp(LocalDate.now().toString());
-            emailMessage.setCustomer(sale.getCustomer());      // reuse CustomerInfo object
+            emailMessage.setCustomer(sale.getCustomer());
             emailMessage.setItems(invoiceItems);
-            emailMessage.setTotal(sale.getAmountTotal());      // SaleMessage.amountTotal
-            emailMessage.setDueAt(LocalDate.now().plusDays(30).toString()); // 30-day payment term
+            emailMessage.setTotal(sale.getAmountTotal());
+            emailMessage.setDueAt(LocalDate.now().plusDays(30).toString());
 
-            // Serialize to XML and publish (models use @XmlRootElement)
-            String xml = xmlMapper.writeValueAsString(emailMessage);
-            rabbitTemplate.convertAndSend(RabbitMQConfig.SEND_EMAIL_QUEUE, xml);
+            // Serialize to JSON and publish
+            String json = objectMapper.writeValueAsString(emailMessage);
+            rabbitTemplate.convertAndSend(RabbitMQConfig.SEND_EMAIL_QUEUE, json);
 
             log.info("Published EmailMessage to send_email queue: invoiceNumber={}, to={}",
                     invoiceNumber, email);
