@@ -15,6 +15,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -22,10 +23,8 @@ import java.util.UUID;
 /**
  * Handles all REST API calls to FossBilling.
  *
- * FossBilling API uses:
- *   - HTTP Basic Auth: username = "admin", password = API key
- *   - Form-encoded POST requests
- *   - Base URL: http://fossbilling:80/api/admin/
+ * Authentication: HTTP Basic Auth (username = "admin", password = API key)
+ * Base URL: http://fossbilling:80/api/admin/
  *
  * Flow per sale:
  *   1. findClientByEmail()   → check if customer already exists
@@ -57,21 +56,46 @@ public class FossBillingApiClient {
      * Returns the client ID if found, or null if the customer does not exist yet.
      */
     public Integer findClientByEmail(String email) {
+        // Null safety: email must be valid
+        if (email == null || email.isBlank()) {
+            log.warn("findClientByEmail called with null or blank email — returning null");
+            return null;
+        }
+
         try {
             MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
             params.add("email", email);
 
             Map<String, Object> response = post("/client/search", params);
-            List<Map<String, Object>> list = (List<Map<String, Object>>) response.get("list");
 
-            if (list != null && !list.isEmpty()) {
-                Integer clientId = (Integer) list.get(0).get("id");
-                log.info("Found existing FossBilling client: id={}, email={}", clientId, email);
-                return clientId;
+            // Null safety: check response and list
+            if (response == null) {
+                log.warn("FossBilling returned null response for client search");
+                return null;
             }
 
-            log.info("No existing client found for email: {}", email);
-            return null;
+            Object listObj = response.get("list");
+            if (!(listObj instanceof List)) {
+                log.info("No client list in response for email: {}", email);
+                return null;
+            }
+
+            List<Map<String, Object>> list = (List<Map<String, Object>>) listObj;
+            if (list.isEmpty()) {
+                log.info("No existing client found for email: {}", email);
+                return null;
+            }
+
+            // Null safety: check first item and id field
+            Map<String, Object> firstClient = list.get(0);
+            if (firstClient == null || firstClient.get("id") == null) {
+                log.warn("Client found but id is null for email: {}", email);
+                return null;
+            }
+
+            Integer clientId = (Integer) firstClient.get("id");
+            log.info("Found existing FossBilling client: id={}, email={}", clientId, email);
+            return clientId;
 
         } catch (Exception e) {
             log.error("Error searching for client by email {}: {}", email, e.getMessage());
@@ -81,20 +105,30 @@ public class FossBillingApiClient {
 
     /**
      * Create a new client in FossBilling using CustomerInfo.
-     * Required fields: email, first_name, last_name, password, country, currency.
      * Returns the new client ID.
      */
     public Integer createClient(CustomerInfo customer) {
+        // Null safety: check customer object
+        if (customer == null) {
+            throw new RuntimeException("Cannot create client: CustomerInfo is null");
+        }
+
+        // Null safety: check email
+        if (customer.getEmail() == null || customer.getEmail().isBlank()) {
+            throw new RuntimeException("Cannot create client: email is null or blank");
+        }
+
         log.info("Creating new FossBilling client for: {}", customer.getEmail());
 
-        // Split the full name into first and last name for FossBilling
-        String fullName = customer.getName() != null ? customer.getName() : "";
-        String[] nameParts = fullName.trim().split(" ", 2);
-        String firstName = nameParts[0];
-        String lastName = nameParts.length > 1 ? nameParts[1] : ".";
+        // Null safety: split full name safely
+        String fullName = customer.getName() != null ? customer.getName().trim() : "";
+        String[] nameParts = fullName.split(" ", 2);
+        String firstName = nameParts.length > 0 && !nameParts[0].isBlank()
+                ? nameParts[0] : "Unknown";
+        String lastName = nameParts.length > 1 && !nameParts[1].isBlank()
+                ? nameParts[1] : ".";
 
-        // Generate a random password for the FossBilling client account
-        // The client won't use this to log in — it's just a required field
+        // Generate a random password — required field but client won't use it
         String generatedPassword = "Fb-" + UUID.randomUUID().toString().substring(0, 12) + "!";
 
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
@@ -102,16 +136,22 @@ public class FossBillingApiClient {
         params.add("first_name", firstName);
         params.add("last_name", lastName);
         params.add("password", generatedPassword);
-        params.add("country", "BE");   // Belgium — adjust if needed
+        params.add("country", "BE");
         params.add("currency", "EUR");
 
+        // Null safety: only add phone if present
         if (customer.getPhone() != null && !customer.getPhone().isBlank()) {
             params.add("phone", customer.getPhone());
         }
 
         Map<String, Object> response = post("/client/create", params);
-        Integer clientId = (Integer) response.get("result");
 
+        // Null safety: check response and result
+        if (response == null || response.get("result") == null) {
+            throw new RuntimeException("FossBilling returned null result for client creation");
+        }
+
+        Integer clientId = (Integer) response.get("result");
         log.info("Created FossBilling client: id={}", clientId);
         return clientId;
     }
@@ -121,6 +161,11 @@ public class FossBillingApiClient {
      * Main entry point called by FossBillingReceiver.
      */
     public Integer findOrCreateClient(CustomerInfo customer) {
+        // Null safety: check customer
+        if (customer == null) {
+            throw new RuntimeException("Cannot find or create client: CustomerInfo is null");
+        }
+
         Integer clientId = findClientByEmail(customer.getEmail());
         if (clientId == null) {
             clientId = createClient(customer);
@@ -137,17 +182,35 @@ public class FossBillingApiClient {
      * Returns the new invoice ID.
      */
     public Integer createInvoice(Integer clientId, SaleMessage sale) {
+        // Null safety: check inputs
+        if (clientId == null) {
+            throw new RuntimeException("Cannot create invoice: clientId is null");
+        }
+        if (sale == null) {
+            throw new RuntimeException("Cannot create invoice: SaleMessage is null");
+        }
+
         log.info("Creating invoice for clientId={}, saleId={}", clientId, sale.getSaleId());
+
+        // Null safety: build notes safely
+        String notes = "Odoo POS Order #" + sale.getSaleId();
+        if (sale.getPosReference() != null && !sale.getPosReference().isBlank()) {
+            notes += " (" + sale.getPosReference() + ")";
+        }
 
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("client_id", String.valueOf(clientId));
         params.add("currency", "EUR");
-        params.add("notes", "Odoo POS Order #" + sale.getSaleId()
-                + (sale.getPosReference() != null ? " (" + sale.getPosReference() + ")" : ""));
+        params.add("notes", notes);
 
         Map<String, Object> response = post("/invoice/create", params);
-        Integer invoiceId = (Integer) response.get("result");
 
+        // Null safety: check response and result
+        if (response == null || response.get("result") == null) {
+            throw new RuntimeException("FossBilling returned null result for invoice creation");
+        }
+
+        Integer invoiceId = (Integer) response.get("result");
         log.info("Created draft invoice: id={}", invoiceId);
         return invoiceId;
     }
@@ -156,24 +219,54 @@ public class FossBillingApiClient {
      * Add a single InvoiceItem line to an existing invoice.
      */
     public void addInvoiceItem(Integer invoiceId, InvoiceItem item) {
+        // Null safety: check inputs
+        if (invoiceId == null) {
+            log.warn("addInvoiceItem called with null invoiceId — skipping");
+            return;
+        }
+        if (item == null) {
+            log.warn("addInvoiceItem called with null item — skipping");
+            return;
+        }
+
+        // Null safety: use fallback title if null
+        String title = item.getTitle() != null ? item.getTitle() : "Unknown product";
+
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("invoice_id", String.valueOf(invoiceId));
-        params.add("title", item.getTitle());
+        params.add("title", title);
         params.add("price", String.valueOf(item.getPrice()));
         params.add("quantity", String.valueOf(item.getQuantity()));
 
         post("/invoice/item/create", params);
-        log.debug("Added item '{}' to invoice {}", item.getTitle(), invoiceId);
+        log.debug("Added item '{}' to invoice {}", title, invoiceId);
     }
 
     /**
      * Convert all SaleItems and add them to the invoice.
-     * SaleItem fields used: product, quantity, priceUnit.
      */
     public void addAllItems(Integer invoiceId, List<SaleItem> saleItems) {
+        // Null safety: check inputs
+        if (invoiceId == null) {
+            log.warn("addAllItems called with null invoiceId — skipping");
+            return;
+        }
+        if (saleItems == null || saleItems.isEmpty()) {
+            log.warn("addAllItems called with null or empty items list for invoiceId={} — skipping",
+                    invoiceId);
+            return;
+        }
+
         for (SaleItem saleItem : saleItems) {
+            // Null safety: skip null items in list
+            if (saleItem == null) {
+                log.warn("Null SaleItem in list for invoiceId={} — skipping", invoiceId);
+                continue;
+            }
+
             InvoiceItem item = new InvoiceItem();
-            item.setTitle(saleItem.getProduct());
+            item.setTitle(saleItem.getProduct() != null
+                    ? saleItem.getProduct() : "Unknown product");
             item.setQuantity(saleItem.getQuantity());
             item.setPrice(saleItem.getPriceUnit());
             addInvoiceItem(invoiceId, item);
@@ -184,6 +277,11 @@ public class FossBillingApiClient {
      * Approve a draft invoice — changes status from draft to approved.
      */
     public void approveInvoice(Integer invoiceId) {
+        // Null safety: check input
+        if (invoiceId == null) {
+            throw new RuntimeException("Cannot approve invoice: invoiceId is null");
+        }
+
         log.info("Approving invoice: id={}", invoiceId);
 
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
@@ -195,12 +293,26 @@ public class FossBillingApiClient {
 
     /**
      * Fetch full invoice details including the generated invoice number.
+     * Returns an empty map if the response is null.
      */
     public Map<String, Object> getInvoice(Integer invoiceId) {
+        // Null safety: check input
+        if (invoiceId == null) {
+            log.warn("getInvoice called with null invoiceId — returning empty map");
+            return Collections.emptyMap();
+        }
+
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("id", String.valueOf(invoiceId));
 
         Map<String, Object> response = post("/invoice/get", params);
+
+        // Null safety: check response
+        if (response == null || response.get("result") == null) {
+            log.warn("FossBilling returned null result for getInvoice({})", invoiceId);
+            return Collections.emptyMap();
+        }
+
         return (Map<String, Object>) response.get("result");
     }
 
@@ -212,7 +324,9 @@ public class FossBillingApiClient {
      * Build the Basic Auth header: "Basic base64(admin:API_KEY)"
      */
     private String buildBasicAuthHeader() {
-        String credentials = "admin:" + apiKey;
+        // Null safety: check apiKey
+        String key = apiKey != null ? apiKey : "";
+        String credentials = "admin:" + key;
         String encoded = Base64.getEncoder()
                 .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
         return "Basic " + encoded;
@@ -222,6 +336,11 @@ public class FossBillingApiClient {
      * Execute a form-encoded POST request to the FossBilling API using Basic Auth.
      */
     private Map<String, Object> post(String endpoint, MultiValueMap<String, String> params) {
+        // Null safety: check baseUrl
+        if (baseUrl == null || baseUrl.isBlank()) {
+            throw new RuntimeException("FossBilling base URL is not configured");
+        }
+
         String url = baseUrl + "/api/admin" + endpoint;
 
         HttpHeaders headers = new HttpHeaders();
@@ -231,6 +350,11 @@ public class FossBillingApiClient {
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
         ResponseEntity<Map> response = restTemplate.postForEntity(url, request, Map.class);
 
+        // Null safety: check HTTP status
+        if (response == null) {
+            throw new RuntimeException("No response received from FossBilling at: " + endpoint);
+        }
+
         if (!response.getStatusCode().is2xxSuccessful()) {
             throw new RuntimeException("FossBilling API error at " + endpoint
                     + ": HTTP " + response.getStatusCode());
@@ -238,6 +362,7 @@ public class FossBillingApiClient {
 
         Map<String, Object> body = response.getBody();
 
+        // Null safety: check error field in response body
         if (body != null && body.get("error") != null) {
             throw new RuntimeException("FossBilling API returned error: " + body.get("error"));
         }

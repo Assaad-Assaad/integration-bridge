@@ -1,8 +1,8 @@
 package be.ehb.integrationbridge.fossbilling;
 
 import be.ehb.integrationbridge.config.RabbitMQConfig;
+import be.ehb.integrationbridge.shared.XmlUtils;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -14,8 +14,8 @@ import org.springframework.stereotype.Component;
 import java.util.Map;
 
 /**
- * Listens on the new_sales queue for sale messages published by OdooSender.
- * Uses JSON deserialization via ObjectMapper.
+ * Listens on the new_sales queue for XML sale messages published by OdooSender.
+ * Uses XmlUtils (JAXB) for XML deserialization.
  */
 @Component
 public class FossBillingReceiver {
@@ -32,48 +32,90 @@ public class FossBillingReceiver {
     @Autowired
     private RabbitTemplate rabbitTemplate;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
-
     @RabbitListener(queues = RabbitMQConfig.NEW_SALES_QUEUE)
     public void onNewSale(Message message) {
+        // Null safety: check message and body
+        if (message == null || message.getBody() == null) {
+            log.warn("Received null message or empty body — skipping");
+            return;
+        }
+
         String body = new String(message.getBody());
+
+        if (body.isBlank()) {
+            log.warn("Received blank message body — skipping");
+            return;
+        }
+
         log.info("Received message from new_sales queue");
         log.debug("Message body: {}", body);
 
         int retryCount = getRetryCount(message);
 
         try {
-            // Step 1: Parse JSON into SaleMessage
-            SaleMessage sale = objectMapper.readValue(body, SaleMessage.class);
-            log.info("Processing saleId={}, customer={}",
+            // Step 1: Parse XML into SaleMessage using XmlUtils
+            SaleMessage sale = XmlUtils.fromXml(body, SaleMessage.class);
+
+            // Null safety: check parsed sale object
+            if (sale == null) {
+                log.warn("Parsed SaleMessage is null — skipping");
+                return;
+            }
+
+            log.info("Processing saleId={}, posReference={}, customer={}",
                     sale.getSaleId(),
+                    sale.getPosReference() != null ? sale.getPosReference() : "N/A",
                     sale.getCustomer() != null ? sale.getCustomer().getEmail() : "null");
 
-            // Step 2: Skip anonymous sales
-            if (sale.getCustomer() == null
-                    || sale.getCustomer().getEmail() == null
-                    || sale.getCustomer().getEmail().isBlank()) {
+            // Step 2: Null safety — skip anonymous sales (no customer or no email)
+            if (sale.getCustomer() == null) {
+                log.warn("Sale {} has no customer — skipping (anonymous sale)", sale.getSaleId());
+                return;
+            }
+
+            String email = sale.getCustomer().getEmail();
+            if (email == null || email.isBlank()) {
                 log.warn("Sale {} has no customer email — skipping (anonymous sale)",
                         sale.getSaleId());
                 return;
             }
 
+            // Null safety: check items list
+            if (sale.getItems() == null || sale.getItems().isEmpty()) {
+                log.warn("Sale {} has no items — skipping", sale.getSaleId());
+                return;
+            }
+
             // Step 3: Find or create customer in FossBilling
             Integer clientId = apiClient.findOrCreateClient(sale.getCustomer());
+            if (clientId == null) {
+                throw new RuntimeException("Failed to find or create FossBilling client for: "
+                        + email);
+            }
             log.info("Using FossBilling clientId={} for saleId={}", clientId, sale.getSaleId());
 
             // Step 4: Create draft invoice
             Integer invoiceId = apiClient.createInvoice(clientId, sale);
+            if (invoiceId == null) {
+                throw new RuntimeException("Failed to create invoice for clientId: " + clientId);
+            }
 
-            // Step 5: Add all items
+            // Step 5: Add all items to the invoice
             apiClient.addAllItems(invoiceId, sale.getItems());
 
-            // Step 6: Approve invoice
+            // Step 6: Approve the invoice
             apiClient.approveInvoice(invoiceId);
 
-            // Step 7: Get invoice number
+            // Step 7: Fetch the finalized invoice to get the invoice number
             Map<String, Object> invoiceData = apiClient.getInvoice(invoiceId);
-            String invoiceNumber = String.valueOf(invoiceData.get("nr"));
+            if (invoiceData == null) {
+                throw new RuntimeException("Failed to retrieve invoice data for invoiceId: "
+                        + invoiceId);
+            }
+
+            // Null safety: check invoice number
+            Object nrObj = invoiceData.get("nr");
+            String invoiceNumber = nrObj != null ? String.valueOf(nrObj) : "UNKNOWN";
 
             log.info("Invoice created and approved: invoiceId={}, invoiceNumber={}",
                     invoiceId, invoiceNumber);
@@ -88,6 +130,10 @@ public class FossBillingReceiver {
         }
     }
 
+    /**
+     * On failure: requeue up to MAX_RETRIES times.
+     * After that, throw so Spring NACK's it → moves to new_sales.dlq
+     */
     private void handleFailure(Message message, String body, int retryCount, Exception e) {
         if (retryCount < MAX_RETRIES) {
             log.warn("Requeueing message, retry {}/{}", retryCount + 1, MAX_RETRIES);
@@ -101,12 +147,17 @@ public class FossBillingReceiver {
                     }
             );
         } else {
-            log.error("Message exceeded max retries ({}). Moving to Dead Letter Queue.", MAX_RETRIES);
+            log.error("Message exceeded max retries ({}). Moving to Dead Letter Queue.",
+                    MAX_RETRIES);
             throw new RuntimeException("Max retries exceeded: " + e.getMessage(), e);
         }
     }
 
     private int getRetryCount(Message message) {
+        if (message.getMessageProperties() == null
+                || message.getMessageProperties().getHeaders() == null) {
+            return 0;
+        }
         Object retryHeader = message.getMessageProperties().getHeaders().get("x-retry-count");
         return retryHeader instanceof Integer ? (Integer) retryHeader : 0;
     }

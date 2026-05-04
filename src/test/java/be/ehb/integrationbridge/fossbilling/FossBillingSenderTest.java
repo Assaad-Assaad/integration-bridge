@@ -55,66 +55,53 @@ class FossBillingSenderTest {
 
     @Test
     void publishEmailMessage_shouldPublishToCorrectQueue() {
-        // Arrange
         SaleMessage sale = buildValidSale();
         ArgumentCaptor<String> queueCaptor = ArgumentCaptor.forClass(String.class);
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate, times(1))
                 .convertAndSend(queueCaptor.capture(), anyString());
         assertEquals(RabbitMQConfig.SEND_EMAIL_QUEUE, queueCaptor.getValue());
     }
 
     @Test
-    void publishEmailMessage_shouldPublishJsonWithInvoiceNumber() {
-        // Arrange
+    void publishEmailMessage_shouldPublishXmlWithInvoiceNumber() {
         SaleMessage sale = buildValidSale();
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate).convertAndSend(anyString(), messageCaptor.capture());
-        String json = messageCaptor.getValue();
-        assertTrue(json.contains("INV-2026-001"));
-        assertTrue(json.contains("test@gmail.com"));
+        String xml = messageCaptor.getValue();
+        assertTrue(xml.contains("INV-2026-001"));
+        assertTrue(xml.contains("test@gmail.com"));
     }
 
     @Test
     void publishEmailMessage_shouldSetCorrectEventType() {
-        // Arrange
         SaleMessage sale = buildValidSale();
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate).convertAndSend(anyString(), messageCaptor.capture());
         assertTrue(messageCaptor.getValue().contains("INVOICE_CREATED"));
     }
 
     @Test
     void publishEmailMessage_shouldSetCorrectSource() {
-        // Arrange
         SaleMessage sale = buildValidSale();
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate).convertAndSend(anyString(), messageCaptor.capture());
         assertTrue(messageCaptor.getValue().contains("fossbilling"));
     }
 
     @Test
     void publishEmailMessage_shouldIncludeAllSaleItems() {
-        // Arrange
         SaleMessage sale = buildValidSale();
 
         SaleItem item2 = new SaleItem();
@@ -125,73 +112,87 @@ class FossBillingSenderTest {
 
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate).convertAndSend(anyString(), messageCaptor.capture());
-        String json = messageCaptor.getValue();
-        assertTrue(json.contains("Cola"));
-        assertTrue(json.contains("Water"));
+        String xml = messageCaptor.getValue();
+        assertTrue(xml.contains("Cola"));
+        assertTrue(xml.contains("Water"));
     }
 
     @Test
     void publishEmailMessage_shouldIncludeCorrectTotal() {
-        // Arrange
         SaleMessage sale = buildValidSale();
         sale.setAmountTotal(12.50);
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate).convertAndSend(anyString(), messageCaptor.capture());
         assertTrue(messageCaptor.getValue().contains("12.5"));
     }
 
     @Test
     void publishEmailMessage_shouldIncludeInvoiceId() {
-        // Arrange
         SaleMessage sale = buildValidSale();
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
 
-        // Act
         sender.publishEmailMessage(sale, 42, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate).convertAndSend(anyString(), messageCaptor.capture());
         assertTrue(messageCaptor.getValue().contains("42"));
     }
 
     // -------------------------------------------------------------------------
-    // Edge case — invalid email
+    // Null safety tests
     // -------------------------------------------------------------------------
 
     @Test
+    void publishEmailMessage_shouldSkip_whenSaleIsNull() {
+        sender.publishEmailMessage(null, 10, "INV-2026-001");
+
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString());
+    }
+
+    @Test
+    void publishEmailMessage_shouldSkip_whenCustomerIsNull() {
+        SaleMessage sale = buildValidSale();
+        sale.setCustomer(null);
+
+        sender.publishEmailMessage(sale, 10, "INV-2026-001");
+
+        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString());
+    }
+
+    @Test
     void publishEmailMessage_shouldSkip_whenEmailIsNull() {
-        // Arrange
         SaleMessage sale = buildValidSale();
         sale.getCustomer().setEmail(null);
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString());
     }
 
     @Test
     void publishEmailMessage_shouldSkip_whenEmailHasNoAtSign() {
-        // Arrange
         SaleMessage sale = buildValidSale();
         sale.getCustomer().setEmail("invalidemail");
 
-        // Act
         sender.publishEmailMessage(sale, 10, "INV-2026-001");
 
-        // Assert
         verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString());
+    }
+
+    @Test
+    void publishEmailMessage_shouldUseUnknown_whenInvoiceNumberIsNull() {
+        SaleMessage sale = buildValidSale();
+        ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
+
+        sender.publishEmailMessage(sale, 10, null);
+
+        verify(rabbitTemplate).convertAndSend(anyString(), messageCaptor.capture());
+        assertTrue(messageCaptor.getValue().contains("UNKNOWN"));
     }
 
     // -------------------------------------------------------------------------
@@ -200,13 +201,11 @@ class FossBillingSenderTest {
 
     @Test
     void publishEmailMessage_shouldThrow_whenRabbitTemplateFails() {
-        // Arrange
         SaleMessage sale = buildValidSale();
 
         doThrow(new RuntimeException("RabbitMQ connection lost"))
                 .when(rabbitTemplate).convertAndSend(anyString(), anyString());
 
-        // Act & Assert
         assertThrows(RuntimeException.class,
                 () -> sender.publishEmailMessage(sale, 10, "INV-2026-001"));
     }
