@@ -3,13 +3,11 @@ package be.ehb.integrationbridge.shared.model;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
-import jakarta.xml.bind.annotation.XmlRootElement;
 import lombok.Data;
 
 import java.util.List;
 
 @Data
-@XmlRootElement
 @JacksonXmlRootElement(localName = "saleMessage")
 public class SaleMessage {
     private String eventType;
