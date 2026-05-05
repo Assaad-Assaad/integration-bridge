@@ -2,6 +2,7 @@ package be.ehb.integrationbridge.shared;
 
 import be.ehb.integrationbridge.exception.XmlSerializationException;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.dataformat.xml.XmlFactory;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import lombok.extern.slf4j.Slf4j;
 import javax.xml.stream.XMLInputFactory;
@@ -41,13 +42,18 @@ public final class XmlUtils {
         }
     }
 
+    @SuppressWarnings("deprecation")
     private static XmlMapper createMapper() {
-        XMLInputFactory inputFactory = XMLInputFactory.newFactory();
+        XMLInputFactory inputFactory = XMLInputFactory.newInstance();
         inputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
         inputFactory.setProperty("javax.xml.stream.isSupportingExternalEntities", false);
 
-        XmlMapper mapper = new XmlMapper(inputFactory);
-        mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-        return mapper;
+        XmlFactory xmlFactory = XmlFactory.builder()
+                .inputFactory(inputFactory)
+                .build();
+
+        return XmlMapper.builder(xmlFactory)
+                .serializationInclusion(JsonInclude.Include.NON_NULL)
+                .build();
     }
 }
