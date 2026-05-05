@@ -1,8 +1,8 @@
 package be.ehb.integrationbridge.fossbilling;
 
 import be.ehb.integrationbridge.config.RabbitMQConfig;
-import be.ehb.integrationbridge.shared.XmlUtils;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.core.Message;
@@ -15,7 +15,7 @@ import java.util.Map;
 
 /**
  * Listens on the new_sales queue for XML sale messages published by OdooSender.
- * Uses XmlUtils (JAXB) for XML deserialization.
+ * Uses XmlMapper (Jackson) for XML deserialization.
  */
 @Component
 public class FossBillingReceiver {
@@ -31,6 +31,8 @@ public class FossBillingReceiver {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    private final XmlMapper xmlMapper = new XmlMapper();
 
     @RabbitListener(queues = RabbitMQConfig.NEW_SALES_QUEUE)
     public void onNewSale(Message message) {
@@ -53,8 +55,8 @@ public class FossBillingReceiver {
         int retryCount = getRetryCount(message);
 
         try {
-            // Step 1: Parse XML into SaleMessage using XmlUtils
-            SaleMessage sale = XmlUtils.fromXml(body, SaleMessage.class);
+            // Step 1: Parse XML into SaleMessage using XmlMapper
+            SaleMessage sale = xmlMapper.readValue(body, SaleMessage.class);
 
             // Null safety: check parsed sale object
             if (sale == null) {
@@ -67,7 +69,7 @@ public class FossBillingReceiver {
                     sale.getPosReference() != null ? sale.getPosReference() : "N/A",
                     sale.getCustomer() != null ? sale.getCustomer().getEmail() : "null");
 
-            // Step 2: Null safety — skip anonymous sales (no customer or no email)
+            // Step 2: Null safety — skip anonymous sales
             if (sale.getCustomer() == null) {
                 log.warn("Sale {} has no customer — skipping (anonymous sale)", sale.getSaleId());
                 return;
@@ -130,10 +132,6 @@ public class FossBillingReceiver {
         }
     }
 
-    /**
-     * On failure: requeue up to MAX_RETRIES times.
-     * After that, throw so Spring NACK's it → moves to new_sales.dlq
-     */
     private void handleFailure(Message message, String body, int retryCount, Exception e) {
         if (retryCount < MAX_RETRIES) {
             log.warn("Requeueing message, retry {}/{}", retryCount + 1, MAX_RETRIES);

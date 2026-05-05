@@ -1,11 +1,11 @@
 package be.ehb.integrationbridge.fossbilling;
 
 import be.ehb.integrationbridge.config.RabbitMQConfig;
-import be.ehb.integrationbridge.shared.XmlUtils;
 import be.ehb.integrationbridge.shared.model.EmailMessage;
 import be.ehb.integrationbridge.shared.model.InvoiceItem;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
@@ -19,7 +19,7 @@ import java.util.List;
 /**
  * Publishes an EmailMessage as XML to the send_email queue
  * after successful invoice creation in FossBilling.
- * Uses XmlUtils (JAXB) for XML serialization.
+ * Uses XmlMapper (Jackson) for XML serialization.
  */
 @Component
 public class FossBillingSender {
@@ -28,6 +28,8 @@ public class FossBillingSender {
 
     @Autowired
     private RabbitTemplate rabbitTemplate;
+
+    private final XmlMapper xmlMapper = new XmlMapper();
 
     public void publishEmailMessage(SaleMessage sale, int invoiceId, String invoiceNumber) {
         // Null safety: check sale object
@@ -56,7 +58,7 @@ public class FossBillingSender {
             List<InvoiceItem> invoiceItems = new ArrayList<>();
             if (sale.getItems() != null) {
                 for (SaleItem saleItem : sale.getItems()) {
-                    if (saleItem == null) continue; // skip null items
+                    if (saleItem == null) continue;
 
                     InvoiceItem item = new InvoiceItem();
                     item.setTitle(saleItem.getProduct() != null
@@ -79,8 +81,8 @@ public class FossBillingSender {
             emailMessage.setTotal(sale.getAmountTotal());
             emailMessage.setDueAt(LocalDate.now().plusDays(30).toString());
 
-            // Serialize to XML using XmlUtils and publish
-            String xml = XmlUtils.toXml(emailMessage);
+            // Serialize to XML using XmlMapper and publish
+            String xml = xmlMapper.writeValueAsString(emailMessage);
             rabbitTemplate.convertAndSend(RabbitMQConfig.SEND_EMAIL_QUEUE, xml);
 
             log.info("Published XML EmailMessage to send_email queue: invoiceNumber={}, to={}",

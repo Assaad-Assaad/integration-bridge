@@ -1,9 +1,9 @@
 package be.ehb.integrationbridge.fossbilling;
 
-import be.ehb.integrationbridge.shared.XmlUtils;
 import be.ehb.integrationbridge.shared.model.CustomerInfo;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -35,17 +35,19 @@ class FossBillingReceiverTest {
     @Mock
     private RabbitTemplate rabbitTemplate;
 
+    private final XmlMapper xmlMapper = new XmlMapper();
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private Message buildMessage(SaleMessage sale) throws Exception {
-        String xml = XmlUtils.toXml(sale);
+        String xml = xmlMapper.writeValueAsString(sale);
         return new Message(xml.getBytes(), new MessageProperties());
     }
 
     private Message buildMessageWithRetry(SaleMessage sale, int retryCount) throws Exception {
-        String xml = XmlUtils.toXml(sale);
+        String xml = xmlMapper.writeValueAsString(sale);
         MessageProperties props = new MessageProperties();
         props.getHeaders().put("x-retry-count", retryCount);
         return new Message(xml.getBytes(), props);
