@@ -1,9 +1,8 @@
 package be.ehb.integrationbridge.shared.model;
 
-import jakarta.xml.bind.annotation.XmlAccessType;
-import jakarta.xml.bind.annotation.XmlAccessorType;
-import jakarta.xml.bind.annotation.XmlElement;
-import jakarta.xml.bind.annotation.XmlElementWrapper;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlElementWrapper;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import jakarta.xml.bind.annotation.XmlRootElement;
 import lombok.Data;
 
@@ -11,7 +10,7 @@ import java.util.List;
 
 @Data
 @XmlRootElement
-@XmlAccessorType(XmlAccessType.FIELD)
+@JacksonXmlRootElement(localName = "emailMessage")
 public class EmailMessage {
     private String eventType;
     private String source;
@@ -19,10 +18,11 @@ public class EmailMessage {
     private String invoiceNumber;
     private String timestamp;
     private CustomerInfo customer;
-
-    @XmlElementWrapper(name = "items")
-    @XmlElement(name = "item")
-    private List<InvoiceItem> items;
     private double total;
     private String dueAt;
+
+    @JacksonXmlElementWrapper(localName = "items")
+    @JacksonXmlProperty(localName = "item")
+    private List<InvoiceItem> items;
+
 }

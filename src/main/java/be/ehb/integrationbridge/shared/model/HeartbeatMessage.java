@@ -1,10 +1,10 @@
 package be.ehb.integrationbridge.shared.model;
 
-import jakarta.xml.bind.annotation.XmlRootElement;
+import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import lombok.Data;
 
 @Data
-@XmlRootElement
+@JacksonXmlRootElement(localName = "heartbeatMessage")
 public class HeartbeatMessage {
     private String source;
     private String status;
