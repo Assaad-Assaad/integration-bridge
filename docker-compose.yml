@@ -1,0 +1,70 @@
+version: '3.8'
+services:
+  # --- RabbitMQ (Message Broker) ---
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "30000:5672"
+      - "30001:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    restart: unless-stopped
+
+  # --- Odoo POS + its database ---
+  odoo-db:
+    image: postgres:15
+    container_name: odoo-db
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: odoo
+      POSTGRES_PASSWORD: odoo123
+    volumes:
+      - odoo-db-data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  odoo:
+    image: odoo:17
+    container_name: odoo
+    ports:
+      - "30002:8069"
+    environment:
+      HOST: odoo-db
+      USER: odoo
+      PASSWORD: odoo123
+    depends_on:
+      - odoo-db
+    volumes:
+      - odoo-data:/var/lib/odoo
+    restart: unless-stopped
+
+  # --- FossBilling + its database ---
+  fossbilling-db:
+    image: mysql:8
+    container_name: fossbilling-db
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: fossbilling
+      MYSQL_USER: fossbilling
+      MYSQL_PASSWORD: fossbilling123
+    volumes:
+      - fossbilling-db-data:/var/lib/mysql
+    restart: unless-stopped
+
+  fossbilling:
+    image: fossbilling/fossbilling
+    container_name: fossbilling
+    ports:
+      - "30003:80"
+    depends_on:
+      - fossbilling-db
+    volumes:
+      - fossbilling-data:/var/www/html
+    restart: unless-stopped
+
+volumes:
+  odoo-db-data:
+  odoo-data:
+  fossbilling-data:
+  fossbilling-db-data:
