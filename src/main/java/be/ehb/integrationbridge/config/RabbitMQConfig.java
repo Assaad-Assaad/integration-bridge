@@ -5,6 +5,12 @@ import org.springframework.amqp.core.QueueBuilder;
 import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
+import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.amqp.support.converter.SimpleMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -78,5 +84,31 @@ public class RabbitMQConfig {
     @Bean
     public Queue heartbeatQueue() {
         return QueueBuilder.durable(HEARTBEAT_QUEUE).build();
+    }
+
+    @Bean
+    public MessageConverter messageConverter() {
+        return new SimpleMessageConverter();
+    }
+
+    @Bean
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            ConnectionFactory connectionFactory,
+            MessageConverter messageConverter) {
+
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setMessageConverter(messageConverter);
+        factory.setDefaultRequeueRejected(false);
+
+        factory.setAdviceChain(
+                RetryInterceptorBuilder.stateless()
+                        .maxRetries(3)
+                        .backOffOptions(1000, 2.0, 10000)
+                        .recoverer(new RejectAndDontRequeueRecoverer())
+                        .build()
+        );
+
+        return factory;
     }
 }
