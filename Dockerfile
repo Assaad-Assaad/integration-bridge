@@ -9,5 +9,12 @@ RUN mvn package -DskipTests
 # Stage 2: Run with a lightweight JRE
 FROM eclipse-temurin:21-jre
 WORKDIR /app
-COPY --from=build /app/target/*.jar app.jar
+
+# Non-root user
+RUN useradd -r -u 1001 appuser
+USER appuser
+
+# Specific jar pattern (not bare wildcard)
+COPY --from=build /app/target/integration-bridge-*.jar app.jar
+
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -3,9 +3,9 @@ package be.ehb.integrationbridge.shared;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
-import com.google.firebase.cloud.FirestoreClient;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
@@ -20,18 +20,22 @@ import java.util.concurrent.ExecutionException;
 public class ProcessedSalesTracker {
 
     private static final String COLLECTION = "processed_sales";
+
+    private final Firestore firestore;
     private final Set<Integer> cache = ConcurrentHashMap.newKeySet();
 
-    /**
-     * Warm the in-memory cache from Firestore on startup.
-     * If Firestore is unreachable, we start with an empty cache and rely on
-     * fallback mode until Firestore becomes available again.
-     */
+    public ProcessedSalesTracker(@Autowired(required = false) Firestore firestore) {
+        this.firestore = firestore;
+    }
+
     @PostConstruct
     public void loadFromFirestore() {
+        if (firestore == null) {
+            log.warn("Firestore unavailable — starting with empty in-memory cache");
+            return;
+        }
         try {
-            Firestore db = FirestoreClient.getFirestore();
-            db.collection(COLLECTION).get().get().getDocuments().forEach(doc -> {
+            firestore.collection(COLLECTION).get().get().getDocuments().forEach(doc -> {
                 try {
                     cache.add(Integer.parseInt(doc.getId()));
                 } catch (NumberFormatException e) {
@@ -49,14 +53,16 @@ public class ProcessedSalesTracker {
         if (cache.contains(saleId)) {
             return true;
         }
+        if (firestore == null) {
+            return false;
+        }
         try {
-            Firestore db = FirestoreClient.getFirestore();
-            DocumentSnapshot doc = db.collection(COLLECTION)
+            DocumentSnapshot doc = firestore.collection(COLLECTION)
                     .document(String.valueOf(saleId))
                     .get()
                     .get();
             if (doc.exists()) {
-                cache.add(saleId);  // populate cache for next time
+                cache.add(saleId);
                 return true;
             }
             return false;
@@ -69,9 +75,11 @@ public class ProcessedSalesTracker {
 
     public void markAsProcessed(int saleId) {
         cache.add(saleId);
+        if (firestore == null) {
+            return;
+        }
         try {
-            Firestore db = FirestoreClient.getFirestore();
-            DocumentReference ref = db.collection(COLLECTION).document(String.valueOf(saleId));
+            DocumentReference ref = firestore.collection(COLLECTION).document(String.valueOf(saleId));
             ref.set(Map.of(
                     "saleId", saleId,
                     "processedAt", Instant.now().toString()
