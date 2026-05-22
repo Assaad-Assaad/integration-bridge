@@ -55,13 +55,6 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Gson (JSON processing) -->
-        <dependency>
-            <groupId>com.google.code.gson</groupId>
-            <artifactId>gson</artifactId>
-            <version>2.11.0</version>
-        </dependency>
-
         <!-- SendGrid SDK -->
         <dependency>
             <groupId>com.sendgrid</groupId>
@@ -76,24 +69,14 @@
             <version>9.2.0</version>
         </dependency>
 
-        <!-- JAXB API -->
-        <dependency>
-            <groupId>jakarta.xml.bind</groupId>
-            <artifactId>jakarta.xml.bind-api</artifactId>
-            <version>4.0.2</version>
-        </dependency>
-
-        <!-- JAXB Implementation -->
-        <dependency>
-            <groupId>org.glassfish.jaxb</groupId>
-            <artifactId>jaxb-runtime</artifactId>
-            <version>4.0.5</version>
-        </dependency>
-
         <dependency>
             <groupId>com.fasterxml.jackson.core</groupId>
             <artifactId>jackson-databind</artifactId>
-            <version>2.15.2</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-xml</artifactId>
         </dependency>
 
         <dependency>
@@ -131,5 +114,4 @@
             </plugin>
         </plugins>
     </build>
-
 </project>

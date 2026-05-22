@@ -18,6 +18,7 @@
 *.zip
 *.tar.gz
 *.rar
+*.original
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 hs_err_pid*
@@ -31,3 +32,16 @@ target/
 
 # IDE files
 .idea/
+*.iml
+.classpath
+.project
+.settings/
+.factorypath
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Firebase credentials
+firebase-key.json
+**/firebase-key.json

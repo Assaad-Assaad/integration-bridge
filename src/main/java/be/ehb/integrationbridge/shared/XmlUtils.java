@@ -1,25 +1,59 @@
 package be.ehb.integrationbridge.shared;
 
-import jakarta.xml.bind.JAXBContext;
-import jakarta.xml.bind.Marshaller;
-import jakarta.xml.bind.Unmarshaller;
-import java.io.StringReader;
-import java.io.StringWriter;
+import be.ehb.integrationbridge.exception.XmlSerializationException;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.dataformat.xml.XmlFactory;
+import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+import lombok.extern.slf4j.Slf4j;
+import javax.xml.stream.XMLInputFactory;
+import java.util.Objects;
 
-public class XmlUtils {
+@Slf4j
+public final class XmlUtils {
 
-    public static String toXml(Object obj) throws Exception {
-        JAXBContext context = JAXBContext.newInstance(obj.getClass());
-        Marshaller marshaller = context.createMarshaller();
-        marshaller.setProperty(Marshaller.JAXB_FORMATTED_OUTPUT, true);
-        StringWriter writer = new StringWriter();
-        marshaller.marshal(obj, writer);
-        return writer.toString();
+    private static final XmlMapper MAPPER = createMapper();
+
+    private XmlUtils() {
+        throw new AssertionError("Utility class — no instances");
     }
 
-    public static <T> T fromXml(String xml, Class<T> clazz) throws Exception {
-        JAXBContext context = JAXBContext.newInstance(clazz);
-        Unmarshaller unmarshaller = context.createUnmarshaller();
-        return clazz.cast(unmarshaller.unmarshal(new StringReader(xml)));
+    public static String toXml(Object obj) {
+        Objects.requireNonNull(obj, "Object to serialize must not be null");
+        try {
+            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(obj);
+        } catch (Exception e) {
+            log.error("Failed to serialize {} to XML", obj.getClass().getSimpleName(), e);
+            throw new XmlSerializationException(
+                    "Failed to serialize " + obj.getClass().getSimpleName() + " to XML", e);
+        }
+    }
+
+    public static <T> T fromXml(String xml, Class<T> clazz) {
+        Objects.requireNonNull(clazz, "Target class must not be null");
+        if (xml == null || xml.isBlank()) {
+            throw new IllegalArgumentException("XML payload must not be null or blank");
+        }
+        try {
+            return MAPPER.readValue(xml, clazz);
+        } catch (Exception e) {
+            log.error("Failed to deserialize XML to {}. Payload: {}", clazz.getSimpleName(), xml, e);
+            throw new XmlSerializationException(
+                    "Failed to deserialize XML to " + clazz.getSimpleName(), e);
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private static XmlMapper createMapper() {
+        XMLInputFactory inputFactory = XMLInputFactory.newInstance();
+        inputFactory.setProperty(XMLInputFactory.SUPPORT_DTD, false);
+        inputFactory.setProperty("javax.xml.stream.isSupportingExternalEntities", false);
+
+        XmlFactory xmlFactory = XmlFactory.builder()
+                .inputFactory(inputFactory)
+                .build();
+
+        return XmlMapper.builder(xmlFactory)
+                .serializationInclusion(JsonInclude.Include.NON_NULL)
+                .build();
     }
 }
