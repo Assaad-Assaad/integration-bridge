@@ -1,6 +1,7 @@
 package be.ehb.integrationbridge.fossbilling;
 
 import be.ehb.integrationbridge.config.RabbitMQConfig;
+import be.ehb.integrationbridge.exception.ApiException;
 import be.ehb.integrationbridge.shared.model.CustomerInfo;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
@@ -196,17 +197,17 @@ class FossBillingSenderTest {
     }
 
     // -------------------------------------------------------------------------
-    // Error handling
+    // Typed exception tests
     // -------------------------------------------------------------------------
 
     @Test
-    void publishEmailMessage_shouldThrow_whenRabbitTemplateFails() {
+    void publishEmailMessage_shouldThrowApiException_whenRabbitTemplateFails() {
         SaleMessage sale = buildValidSale();
 
         doThrow(new RuntimeException("RabbitMQ connection lost"))
                 .when(rabbitTemplate).convertAndSend(anyString(), anyString());
 
-        assertThrows(RuntimeException.class,
+        assertThrows(ApiException.class,
                 () -> sender.publishEmailMessage(sale, 10, "INV-2026-001"));
     }
 }

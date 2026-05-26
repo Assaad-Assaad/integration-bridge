@@ -1,9 +1,11 @@
 package be.ehb.integrationbridge.fossbilling;
 
+import be.ehb.integrationbridge.exception.ApiException;
+import be.ehb.integrationbridge.exception.XmlSerializationException;
+import be.ehb.integrationbridge.shared.XmlUtils;
 import be.ehb.integrationbridge.shared.model.CustomerInfo;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
-import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -13,6 +15,7 @@ import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 
@@ -35,22 +38,13 @@ class FossBillingReceiverTest {
     @Mock
     private RabbitTemplate rabbitTemplate;
 
-    private final XmlMapper xmlMapper = new XmlMapper();
-
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
 
     private Message buildMessage(SaleMessage sale) throws Exception {
-        String xml = xmlMapper.writeValueAsString(sale);
-        return new Message(xml.getBytes(), new MessageProperties());
-    }
-
-    private Message buildMessageWithRetry(SaleMessage sale, int retryCount) throws Exception {
-        String xml = xmlMapper.writeValueAsString(sale);
-        MessageProperties props = new MessageProperties();
-        props.getHeaders().put("x-retry-count", retryCount);
-        return new Message(xml.getBytes(), props);
+        String xml = XmlUtils.toXml(sale);
+        return new Message(xml.getBytes(StandardCharsets.UTF_8), new MessageProperties());
     }
 
     private SaleMessage buildValidSale() {
@@ -132,7 +126,7 @@ class FossBillingReceiverTest {
 
     @Test
     void onNewSale_shouldSkip_whenBodyIsBlank() {
-        Message message = new Message("".getBytes(), new MessageProperties());
+        Message message = new Message("".getBytes(StandardCharsets.UTF_8), new MessageProperties());
 
         receiver.onNewSale(message);
 
@@ -189,41 +183,54 @@ class FossBillingReceiverTest {
     }
 
     // -------------------------------------------------------------------------
-    // Retry logic tests
+    // Typed exception tests
     // -------------------------------------------------------------------------
 
     @Test
-    void onNewSale_shouldRequeue_whenExceptionOccursAndRetryBelowMax() throws Exception {
+    void onNewSale_shouldThrowApiException_whenApiClientFails() throws Exception {
         SaleMessage sale = buildValidSale();
-        Message message = buildMessageWithRetry(sale, 0);
+        Message message = buildMessage(sale);
 
         when(apiClient.findOrCreateClient(any()))
-                .thenThrow(new RuntimeException("FossBilling down"));
+                .thenThrow(new ApiException("FossBilling API unreachable"));
 
-        assertDoesNotThrow(() -> receiver.onNewSale(message));
-    }
-
-    @Test
-    void onNewSale_shouldThrowToTriggerDLQ_whenMaxRetriesExceeded() throws Exception {
-        SaleMessage sale = buildValidSale();
-        Message message = buildMessageWithRetry(sale, 3);
-
-        when(apiClient.findOrCreateClient(any()))
-                .thenThrow(new RuntimeException("FossBilling still down"));
-
-        assertThrows(RuntimeException.class, () -> receiver.onNewSale(message));
+        assertThrows(ApiException.class, () -> receiver.onNewSale(message));
         verifyNoInteractions(rabbitTemplate);
     }
 
     @Test
-    void onNewSale_shouldIncrementRetryCount_whenRequeuing() throws Exception {
+    void onNewSale_shouldThrowXmlSerializationException_whenXmlIsInvalid() {
+        // Invalid XML body
+        String invalidXml = "<invalid>not a sale message";
+        Message message = new Message(
+                invalidXml.getBytes(StandardCharsets.UTF_8), new MessageProperties());
+
+        assertThrows(XmlSerializationException.class, () -> receiver.onNewSale(message));
+        verifyNoInteractions(apiClient);
+        verifyNoInteractions(sender);
+    }
+
+    @Test
+    void onNewSale_shouldThrowApiException_whenInvoiceCreationFails() throws Exception {
         SaleMessage sale = buildValidSale();
-        Message message = buildMessageWithRetry(sale, 1);
+        Message message = buildMessage(sale);
+
+        when(apiClient.findOrCreateClient(any())).thenReturn(5);
+        when(apiClient.createInvoice(eq(5), any())).thenReturn(null);
+
+        assertThrows(ApiException.class, () -> receiver.onNewSale(message));
+        verifyNoInteractions(rabbitTemplate);
+    }
+
+    @Test
+    void onNewSale_shouldWrapUnexpectedExceptionInApiException() throws Exception {
+        SaleMessage sale = buildValidSale();
+        Message message = buildMessage(sale);
 
         when(apiClient.findOrCreateClient(any()))
-                .thenThrow(new RuntimeException("FossBilling down"));
+                .thenThrow(new NullPointerException("unexpected null"));
 
-        assertDoesNotThrow(() -> receiver.onNewSale(message));
-        verify(apiClient, times(1)).findOrCreateClient(any());
+        assertThrows(ApiException.class, () -> receiver.onNewSale(message));
+        verifyNoInteractions(rabbitTemplate);
     }
 }
