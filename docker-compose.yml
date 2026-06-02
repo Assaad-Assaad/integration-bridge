@@ -63,6 +63,44 @@ services:
       - fossbilling-data:/var/www/html
     restart: unless-stopped
 
+  # --- Integration bridge project ----
+  integration-bridge:
+    build:
+      context: /home/ehbstudent/integration-bridge
+      dockerfile: Dockerfile
+    container_name: integration-bridge
+    depends_on:
+      - rabbitmq
+      - odoo
+      - fossbilling
+    environment:
+      # RabbitMQ — talks to the rabbitmq service by name, internal port
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin123
+
+      # Odoo — internal service name + internal port
+      ODOO_URL: http://odoo:8069
+      ODOO_DB: integration-group1
+      ODOO_USER_ID: 2
+      ODOO_API_KEY: 9ffbfd7b980bc05ccb1431ae4a866f82d39e4e0d
+
+      # FossBilling
+      FOSSBILLING_URL: http://fossbilling:80
+      FOSSBILLING_API_KEY: your-fossbilling-api-key
+
+      # SendGrid
+      SENDGRID_API_KEY: your-sendgrid-api-key
+      SENDGRID_FROM_EMAIL: noreply@example.com
+
+      # Firebase — points to the mounted credentials file
+      FIREBASE_CREDENTIALS_PATH: file:/app/firebase-key.json
+    volumes:
+      # Mount the credentials file from the VM filesystem into the container
+      - /home/ehbstudent/integration-bridge/firebase-key.json:/app/firebase-key.json:ro
+    restart: unless-stopped
+
 volumes:
   odoo-db-data:
   odoo-data:
