@@ -10,6 +10,7 @@ import org.springframework.web.client.RestTemplate;
 import be.ehb.integrationbridge.exception.ApiException;
 import be.ehb.integrationbridge.shared.model.InvoiceItem;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -47,11 +48,13 @@ public class SendGridApiClient {
      * {
      *   "personalizations": [
      *     {
-     *         "to": [{"email": <to>}],
+     *         "to": [{"email": <customerEmail>}],
      *         "dynamic_template_data": {
-     *             "invoiceItems": [],
-     *             "invoiceTotal": 25.50,
-     *             "invoiceDueAt": "2026-05-31 12:00:00"
+     *             "invoiceNumber": <invoiceNumber>,
+     *             "customerName": <customerName>,
+     *             "invoiceItems": <invoiceItems>,
+     *             "invoiceTotal": <invoiceTotal>,
+     *             "invoiceDueAt": <invoiceDueAt>
      *         }
      *     }
      *   ],
@@ -60,26 +63,49 @@ public class SendGridApiClient {
      *   "template_id": "d-9fb0cc3fdd55479b9771e32b215e7436"
      * }
      */
-    public void sendMail(String customerEmail, String subject, List<InvoiceItem> invoiceItems, double invoiceTotal, String invoiceDueAt) {
+    public Boolean sendMail(String customerEmail, String customerName, String invoiceNumber, String subject, List<InvoiceItem> invoiceItems, double invoiceTotal, String invoiceDueAt) {
+
+        // Remap invoice items with formatted prices as string objects
+        List<Map<String, Object>> tempItems = new ArrayList<>();
+        for (InvoiceItem item : invoiceItems) {
+            tempItems.add(Map.of(
+                "title", item.getTitle(),
+                "quantity", String.valueOf(item.getQuantity()),
+                "price", String.format("%.2f", item.getPrice())
+            ));
+        }
+        List<Map<String, Object>> formattedItems = List.copyOf(tempItems);
+        
+        // Build dynamic template data which will be fed into the SendGrid template itself
+        Map<String, Object> dynamicTemplateData = Map.of(
+            "invoiceNumber", invoiceNumber,
+            "customerName", customerName,
+            "invoiceItems", formattedItems,
+            "invoiceTotal", String.format("%.2f", invoiceTotal),
+            "invoiceDueAt", invoiceDueAt
+        );
+    
+        List<Map<String, Object>> personalizations = List.of(Map.of(
+            "to", List.of(Map.of("email", customerEmail)),
+            "dynamic_template_data", dynamicTemplateData
+        ));
+        
         Map<String, Object> body = Map.of(
-                "personalizations", List.of(
-                    Map.of(
-                        "to", List.of(Map.of("email", customerEmail)),
-                        "dynamic_template_data", Map.of(
-                            "invoiceItems", invoiceItems,
-                            "invoiceTotal", invoiceTotal,
-                            "invoiceDueAt", invoiceDueAt
-                        )
-                    )
-                ),
-                "from",    Map.of("email", fromEmail),
-                "subject", subject,
-                "template_id", "d-9fb0cc3fdd55479b9771e32b215e7436"
+            "personalizations", personalizations,
+            "from", Map.of("email", fromEmail),
+            "subject", subject,
+            "template_id", "d-9fb0cc3fdd55479b9771e32b215e7436"
         );
 
-        post("/v3/mail/send", body);
-
+        try {
+            post("/v3/mail/send", body);
+        } catch (ApiException e) {
+            log.error("Could not send email to '{}' with subject '{}' due to the following error:\n{}", customerEmail, subject, e.getMessage());
+            return false;
+        }
+        
         log.debug("Sent email to '{}' with subject '{}'", customerEmail, subject);
+        return true;
     }
 
     // -------------------------------------------------------------------------
