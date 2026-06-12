@@ -63,7 +63,7 @@ public class SendGridApiClient {
      *   "template_id": "d-9fb0cc3fdd55479b9771e32b215e7436"
      * }
      */
-    public Boolean sendMail(String customerEmail, String customerName, String invoiceNumber, String subject, List<InvoiceItem> invoiceItems, double invoiceTotal, String invoiceDueAt) {
+    public void sendMail(String customerEmail, String customerName, String invoiceNumber, String subject, List<InvoiceItem> invoiceItems, double invoiceTotal, String invoiceDueAt) {
 
         // Remap invoice items with formatted prices as string objects
         List<Map<String, Object>> tempItems = new ArrayList<>();
@@ -96,16 +96,10 @@ public class SendGridApiClient {
             "subject", subject,
             "template_id", "d-9fb0cc3fdd55479b9771e32b215e7436"
         );
-
-        try {
-            post("/v3/mail/send", body);
-        } catch (ApiException e) {
-            log.error("Could not send email to '{}' with subject '{}' due to the following error:\n{}", customerEmail, subject, e.getMessage());
-            return false;
-        }
         
+        post("/v3/mail/send", body);
+    
         log.debug("Sent email to '{}' with subject '{}'", customerEmail, subject);
-        return true;
     }
 
     // -------------------------------------------------------------------------

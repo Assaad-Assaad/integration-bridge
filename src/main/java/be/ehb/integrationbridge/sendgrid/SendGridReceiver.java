@@ -87,7 +87,7 @@ public class SendGridReceiver {
             String subject = "Invoice " + queueMessage.getInvoiceNumber();
 
             // Step 4: Send email via SendGrid API
-            sendGridApiClient.sendMail(customerEmail, customerName, subject, invoiceNumber, invoiceItems, invoiceTotal, invoiceDueAt);
+            sendGridApiClient.sendMail(customerEmail, customerName, invoiceNumber, subject, invoiceItems, invoiceTotal, invoiceDueAt);
 
             log.info("Email sent for invoiceId={}, invoiceNumber={}", invoiceId, invoiceNumber);
         } catch (XmlSerializationException | ApiException e) {
