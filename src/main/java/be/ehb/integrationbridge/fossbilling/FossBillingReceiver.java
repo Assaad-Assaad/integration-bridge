@@ -5,28 +5,29 @@ import be.ehb.integrationbridge.exception.ApiException;
 import be.ehb.integrationbridge.exception.XmlSerializationException;
 import be.ehb.integrationbridge.shared.XmlUtils;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.rabbit.annotation.RabbitListener;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class FossBillingReceiver {
 
-    private static final Logger log = LoggerFactory.getLogger(FossBillingReceiver.class);
+    private final FossBillingApiClient apiClient;
+    private final FossBillingSender sender;
 
-    @Autowired
-    private FossBillingApiClient apiClient;
-
-    @Autowired
-    private FossBillingSender sender;
-
-    @RabbitListener(queues = RabbitMQConfig.NEW_SALES_QUEUE)
+    // Fix: explicit containerFactory so Spring uses the retry config
+    // (without it, Spring uses the default factory and every failure goes straight to DLQ)
+    @RabbitListener(
+            queues = RabbitMQConfig.NEW_SALES_QUEUE,
+            containerFactory = "rabbitListenerContainerFactory"
+    )
     public void onNewSale(Message message) {
         if (message == null || message.getBody() == null) {
             log.warn("Received null message or empty body — skipping");
@@ -119,11 +120,10 @@ public class FossBillingReceiver {
             sender.publishEmailMessage(sale, invoiceId, invoiceNumber);
 
         } catch (ApiException | XmlSerializationException e) {
-            // Typed exceptions — rethrow so Spring AMQP NACK's → DLQ
+            // Typed exceptions — rethrow so Spring AMQP retries → DLQ after max attempts
             log.error("Error processing sale message: {}", e.getMessage(), e);
             throw e;
         } catch (Exception e) {
-            // Unexpected exceptions — wrap in ApiException
             log.error("Unexpected error processing sale message: {}", e.getMessage(), e);
             throw new ApiException("Unexpected error: " + e.getMessage(), e);
         }

@@ -2,19 +2,18 @@ package be.ehb.integrationbridge.fossbilling;
 
 import be.ehb.integrationbridge.exception.ApiException;
 import be.ehb.integrationbridge.shared.model.CustomerInfo;
-import be.ehb.integrationbridge.shared.model.InvoiceItem;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.*;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.ArrayList;
@@ -29,14 +28,16 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class FossBillingApiClientTest {
 
-    @InjectMocks
-    private FossBillingApiClient apiClient;
-
     @Mock
     private RestTemplate restTemplate;
 
+    private FossBillingApiClient apiClient;
+
     @BeforeEach
     void setUp() {
+        // Constructor injection — pass the mock RestTemplate via constructor
+        apiClient = new FossBillingApiClient(restTemplate);
+        // @Value fields still set via reflection
         ReflectionTestUtils.setField(apiClient, "baseUrl", "http://localhost:30003");
         ReflectionTestUtils.setField(apiClient, "apiKey", "test-api-key");
     }
@@ -87,13 +88,14 @@ class FossBillingApiClientTest {
     }
 
     @Test
-    void findClientByEmail_shouldReturnNull_whenExceptionOccurs() {
+    void findClientByEmail_shouldThrowApiException_whenNetworkError() {
+        // Fix: network errors must propagate as ApiException (not return null)
+        // so the receiver retries instead of creating a duplicate client
         when(restTemplate.postForEntity(anyString(), any(), eq(Map.class)))
-                .thenThrow(new RuntimeException("Connection refused"));
+                .thenThrow(new RestClientException("Connection refused"));
 
-        Integer clientId = apiClient.findClientByEmail("test@gmail.com");
-
-        assertNull(clientId);
+        assertThrows(ApiException.class,
+                () -> apiClient.findClientByEmail("test@gmail.com"));
     }
 
     // -------------------------------------------------------------------------

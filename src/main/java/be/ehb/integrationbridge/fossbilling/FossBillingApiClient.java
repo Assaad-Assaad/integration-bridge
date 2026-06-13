@@ -5,9 +5,8 @@ import be.ehb.integrationbridge.shared.model.CustomerInfo;
 import be.ehb.integrationbridge.shared.model.InvoiceItem;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
@@ -23,19 +22,20 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class FossBillingApiClient {
-
-    private static final Logger log = LoggerFactory.getLogger(FossBillingApiClient.class);
 
     @Value("${fossbilling.url}")
     private String baseUrl;
 
-    @Value("${fossbilling.api-key}")
+    // Fix: property name is fossbilling.apiKey (not fossbilling.api-key)
+    @Value("${fossbilling.apiKey}")
     private String apiKey;
 
-    @Autowired
-    private RestTemplate restTemplate;
+    // Constructor injection — final field set via @RequiredArgsConstructor
+    private final RestTemplate restTemplate;
 
     // -------------------------------------------------------------------------
     // CLIENT METHODS
@@ -47,45 +47,39 @@ public class FossBillingApiClient {
             return null;
         }
 
-        try {
-            MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-            params.add("email", email);
+        // Note: no broad try/catch here. Network errors must propagate as ApiException
+        // so the receiver does NOT interpret them as "client doesn't exist" (would create duplicates).
+        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("email", email);
 
-            Map<String, Object> response = post("/client/search", params);
+        Map<String, Object> response = post("/client/search", params);
 
-            if (response == null) {
-                log.warn("FossBilling returned null response for client search");
-                return null;
-            }
-
-            Object listObj = response.get("list");
-            if (!(listObj instanceof List)) {
-                log.info("No client list in response for email: {}", email);
-                return null;
-            }
-
-            List<Map<String, Object>> list = (List<Map<String, Object>>) listObj;
-            if (list.isEmpty()) {
-                log.info("No existing client found for email: {}", email);
-                return null;
-            }
-
-            Map<String, Object> firstClient = list.get(0);
-            if (firstClient == null || firstClient.get("id") == null) {
-                log.warn("Client found but id is null for email: {}", email);
-                return null;
-            }
-
-            Integer clientId = (Integer) firstClient.get("id");
-            log.info("Found existing FossBilling client: id={}, email={}", clientId, email);
-            return clientId;
-
-        } catch (ApiException e) {
-            throw e;
-        } catch (Exception e) {
-            log.error("Error searching for client by email {}: {}", email, e.getMessage());
+        if (response == null) {
+            log.warn("FossBilling returned null response for client search");
             return null;
         }
+
+        Object listObj = response.get("list");
+        if (!(listObj instanceof List)) {
+            log.info("No client list in response for email: {}", email);
+            return null;
+        }
+
+        List<Map<String, Object>> list = (List<Map<String, Object>>) listObj;
+        if (list.isEmpty()) {
+            log.info("No existing client found for email: {}", email);
+            return null;
+        }
+
+        Map<String, Object> firstClient = list.get(0);
+        if (firstClient == null || firstClient.get("id") == null) {
+            log.warn("Client found but id is null for email: {}", email);
+            return null;
+        }
+
+        Integer clientId = (Integer) firstClient.get("id");
+        log.info("Found existing FossBilling client: id={}, email={}", clientId, email);
+        return clientId;
     }
 
     public Integer createClient(CustomerInfo customer) {
@@ -287,6 +281,8 @@ public class FossBillingApiClient {
         try {
             response = restTemplate.postForEntity(url, request, Map.class);
         } catch (RestClientException e) {
+            // Network error must propagate as ApiException so the receiver retries
+            // instead of treating it as "client doesn't exist"
             throw new ApiException(
                     "Network error calling FossBilling at " + endpoint + ": " + e.getMessage(), e);
         }

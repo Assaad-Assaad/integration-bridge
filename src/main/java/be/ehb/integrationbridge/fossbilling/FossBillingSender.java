@@ -8,23 +8,21 @@ import be.ehb.integrationbridge.shared.model.EmailMessage;
 import be.ehb.integrationbridge.shared.model.InvoiceItem;
 import be.ehb.integrationbridge.shared.model.SaleItem;
 import be.ehb.integrationbridge.shared.model.SaleMessage;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 
+@Slf4j
 @Component
+@RequiredArgsConstructor
 public class FossBillingSender {
 
-    private static final Logger log = LoggerFactory.getLogger(FossBillingSender.class);
-
-    @Autowired
-    private RabbitTemplate rabbitTemplate;
+    private final RabbitTemplate rabbitTemplate;
 
     public void publishEmailMessage(SaleMessage sale, int invoiceId, String invoiceNumber) {
         if (sale == null) {
@@ -73,7 +71,7 @@ public class FossBillingSender {
             emailMessage.setTotal(sale.getAmountTotal());
             emailMessage.setDueAt(LocalDate.now().plusDays(30).toString());
 
-            // Serialize to XML using XmlUtils (JAXB)
+            // Serialize to XML using XmlUtils (JAXB) — JAXB outputs UTF-8 by default
             String xml;
             try {
                 xml = XmlUtils.toXml(emailMessage);
@@ -82,7 +80,6 @@ public class FossBillingSender {
                         "Failed to serialize EmailMessage to XML: " + e.getMessage(), e);
             }
 
-            // Use 2-argument convertAndSend(String, Object) — no ambiguity
             rabbitTemplate.convertAndSend(RabbitMQConfig.SEND_EMAIL_QUEUE, xml);
 
             log.info("Published XML EmailMessage to send_email queue: invoiceNumber={}, to={}",

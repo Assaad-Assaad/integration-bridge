@@ -13,7 +13,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.amqp.core.Message;
 import org.springframework.amqp.core.MessageProperties;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -26,6 +25,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class FossBillingReceiverTest {
 
+    // @InjectMocks works with constructor injection — Mockito passes the mocks below
     @InjectMocks
     private FossBillingReceiver receiver;
 
@@ -34,9 +34,6 @@ class FossBillingReceiverTest {
 
     @Mock
     private FossBillingSender sender;
-
-    @Mock
-    private RabbitTemplate rabbitTemplate;
 
     // -------------------------------------------------------------------------
     // Helpers
@@ -195,12 +192,10 @@ class FossBillingReceiverTest {
                 .thenThrow(new ApiException("FossBilling API unreachable"));
 
         assertThrows(ApiException.class, () -> receiver.onNewSale(message));
-        verifyNoInteractions(rabbitTemplate);
     }
 
     @Test
     void onNewSale_shouldThrowXmlSerializationException_whenXmlIsInvalid() {
-        // Invalid XML body
         String invalidXml = "<invalid>not a sale message";
         Message message = new Message(
                 invalidXml.getBytes(StandardCharsets.UTF_8), new MessageProperties());
@@ -219,7 +214,6 @@ class FossBillingReceiverTest {
         when(apiClient.createInvoice(eq(5), any())).thenReturn(null);
 
         assertThrows(ApiException.class, () -> receiver.onNewSale(message));
-        verifyNoInteractions(rabbitTemplate);
     }
 
     @Test
@@ -231,6 +225,5 @@ class FossBillingReceiverTest {
                 .thenThrow(new NullPointerException("unexpected null"));
 
         assertThrows(ApiException.class, () -> receiver.onNewSale(message));
-        verifyNoInteractions(rabbitTemplate);
     }
 }
