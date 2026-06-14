@@ -166,6 +166,7 @@ public class FossBillingApiClient {
         params.add("client_id", String.valueOf(clientId));
         params.add("currency", "EUR");
         params.add("notes", notes);
+        params.add("gateway_id", "1");
 
         // FossBilling uses "prepare" to create a draft invoice, not "create"
         Map<String, Object> response = post("/invoice/prepare", params);
@@ -241,6 +242,20 @@ public class FossBillingApiClient {
 
         post("/invoice/approve", params);
         log.info("Invoice approved: id={}", invoiceId);
+    }
+
+    public void markInvoiceAsPaid(Integer invoiceId) {
+        if (invoiceId == null) {
+            throw new ApiException("Cannot mark invoice as paid: invoiceId is null");
+        }
+
+        log.info("Marking invoice as paid: id={}", invoiceId);
+
+        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
+        params.add("id", String.valueOf(invoiceId));
+
+        post("/invoice/mark_as_paid", params);
+        log.info("Invoice marked as paid: id={}", invoiceId);
     }
 
     public Map<String, Object> getInvoice(Integer invoiceId) {

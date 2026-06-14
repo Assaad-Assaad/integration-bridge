@@ -53,8 +53,11 @@ class FossBillingApiClientTest {
         List<Map<String, Object>> list = new ArrayList<>();
         list.add(client);
 
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", list);
+
         Map<String, Object> responseBody = new HashMap<>();
-        responseBody.put("list", list);
+        responseBody.put("result", result);
         responseBody.put("error", null);
 
         when(restTemplate.postForEntity(anyString(), any(), eq(Map.class)))
@@ -193,8 +196,11 @@ class FossBillingApiClientTest {
         client.put("id", 5);
         List<Map<String, Object>> list = List.of(client);
 
+        Map<String, Object> result = new HashMap<>();
+        result.put("list", list);
+
         Map<String, Object> responseBody = new HashMap<>();
-        responseBody.put("list", list);
+        responseBody.put("result", result);
         responseBody.put("error", null);
 
         when(restTemplate.postForEntity(anyString(), any(), eq(Map.class)))

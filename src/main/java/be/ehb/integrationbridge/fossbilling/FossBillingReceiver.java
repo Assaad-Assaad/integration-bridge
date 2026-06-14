@@ -100,6 +100,7 @@ public class FossBillingReceiver {
 
             // Step 6: Approve invoice
             apiClient.approveInvoice(invoiceId);
+            apiClient.markInvoiceAsPaid(invoiceId);
 
             // Step 7: Fetch invoice number
             Map<String, Object> invoiceData = apiClient.getInvoice(invoiceId);
