@@ -49,8 +49,8 @@ public class OdooApiClient {
      * any method on any Odoo model (e.g. search_read on pos.order).
      * Wraps network errors as ApiException with an "Odoo" prefix.
      */
-    private String callOdoo(String model, String method, Object domain, Object params) {
-        var args = List.of(db, userId, apiKey, model, method, domain, params);
+    private String callOdoo(String model, String method, Object positionalArg, Object params) {
+        var args = List.of(db, userId, apiKey, model, method, List.of(positionalArg), params);
         var request = createRequest("object", "execute_kw", args);
         try {
             return restTemplate.postForObject(url + "/jsonrpc", request, String.class);
