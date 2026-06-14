@@ -22,8 +22,6 @@ public class FossBillingReceiver {
     private final FossBillingApiClient apiClient;
     private final FossBillingSender sender;
 
-    // Fix: explicit containerFactory so Spring uses the retry config
-    // (without it, Spring uses the default factory and every failure goes straight to DLQ)
     @RabbitListener(
             queues = RabbitMQConfig.NEW_SALES_QUEUE,
             containerFactory = "rabbitListenerContainerFactory"

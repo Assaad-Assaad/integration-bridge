@@ -30,11 +30,9 @@ public class FossBillingApiClient {
     @Value("${fossbilling.url}")
     private String baseUrl;
 
-    // Fix: property name is fossbilling.apiKey (not fossbilling.api-key)
     @Value("${fossbilling.apiKey}")
     private String apiKey;
 
-    // Constructor injection — final field set via @RequiredArgsConstructor
     private final RestTemplate restTemplate;
 
     // -------------------------------------------------------------------------
