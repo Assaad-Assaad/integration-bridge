@@ -50,14 +50,22 @@ public class FossBillingApiClient {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("email", email);
 
-        Map<String, Object> response = post("/client/search", params);
+        Map<String, Object> response = post("/client/get_list", params);
 
         if (response == null) {
-            log.warn("FossBilling returned null response for client search");
+            log.warn("FossBilling returned null response for client lookup");
             return null;
         }
 
-        Object listObj = response.get("list");
+        // FossBilling wraps payload as {"result": {pages, page, per_page, total, list: [...]}, "error": null}
+        Object resultObj = response.get("result");
+        if (!(resultObj instanceof Map)) {
+            log.warn("FossBilling get_list response has no result map for email: {}", email);
+            return null;
+        }
+
+        Map<String, Object> result = (Map<String, Object>) resultObj;
+        Object listObj = result.get("list");
         if (!(listObj instanceof List)) {
             log.info("No client list in response for email: {}", email);
             return null;
@@ -75,7 +83,7 @@ public class FossBillingApiClient {
             return null;
         }
 
-        Integer clientId = (Integer) firstClient.get("id");
+        Integer clientId = toInteger(firstClient.get("id"));
         log.info("Found existing FossBilling client: id={}, email={}", clientId, email);
         return clientId;
     }
@@ -104,6 +112,7 @@ public class FossBillingApiClient {
         params.add("first_name", firstName);
         params.add("last_name", lastName);
         params.add("password", generatedPassword);
+        params.add("password_confirm", generatedPassword);
         params.add("country", "BE");
         params.add("currency", "EUR");
 
@@ -117,7 +126,7 @@ public class FossBillingApiClient {
             throw new ApiException("FossBilling returned null result for client creation");
         }
 
-        Integer clientId = (Integer) response.get("result");
+        Integer clientId = toInteger(response.get("result"));
         log.info("Created FossBilling client: id={}", clientId);
         return clientId;
     }
@@ -158,13 +167,14 @@ public class FossBillingApiClient {
         params.add("currency", "EUR");
         params.add("notes", notes);
 
-        Map<String, Object> response = post("/invoice/create", params);
+        // FossBilling uses "prepare" to create a draft invoice, not "create"
+        Map<String, Object> response = post("/invoice/prepare", params);
 
         if (response == null || response.get("result") == null) {
             throw new ApiException("FossBilling returned null result for invoice creation");
         }
 
-        Integer invoiceId = (Integer) response.get("result");
+        Integer invoiceId = toInteger(response.get("result"));
         log.info("Created draft invoice: id={}", invoiceId);
         return invoiceId;
     }
@@ -181,13 +191,16 @@ public class FossBillingApiClient {
 
         String title = item.getTitle() != null ? item.getTitle() : "Unknown product";
 
+        // FossBilling adds items via /invoice/update with a nested "new_item" param.
+        // Each call adds one item to the existing invoice.
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        params.add("invoice_id", String.valueOf(invoiceId));
-        params.add("title", title);
-        params.add("price", String.valueOf(item.getPrice()));
-        params.add("quantity", String.valueOf(item.getQuantity()));
+        params.add("id", String.valueOf(invoiceId));
+        params.add("new_item[title]", title);
+        params.add("new_item[price]", String.valueOf(item.getPrice()));
+        params.add("new_item[quantity]", String.valueOf(item.getQuantity()));
+        params.add("new_item[taxed]", "1");
 
-        post("/invoice/item/create", params);
+        post("/invoice/update", params);
         log.debug("Added item '{}' to invoice {}", title, invoiceId);
     }
 
@@ -259,6 +272,28 @@ public class FossBillingApiClient {
         String encoded = Base64.getEncoder()
                 .encodeToString(credentials.getBytes(StandardCharsets.UTF_8));
         return "Basic " + encoded;
+    }
+
+    /**
+     * FossBilling returns numeric IDs sometimes as Integer, sometimes as String.
+     * This helper safely converts to Integer regardless.
+     */
+    private Integer toInteger(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Integer) {
+            return (Integer) value;
+        }
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        }
+        try {
+            return Integer.valueOf(value.toString());
+        } catch (NumberFormatException e) {
+            log.warn("Cannot convert value to Integer: {}", value);
+            return null;
+        }
     }
 
     private Map<String, Object> post(String endpoint, MultiValueMap<String, String> params) {
