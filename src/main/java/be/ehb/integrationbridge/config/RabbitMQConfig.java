@@ -1,10 +1,16 @@
 package be.ehb.integrationbridge.config;
 
-import org.springframework.amqp.core.Queue;
-import org.springframework.amqp.core.QueueBuilder;
-import org.springframework.amqp.core.DirectExchange;
 import org.springframework.amqp.core.Binding;
 import org.springframework.amqp.core.BindingBuilder;
+import org.springframework.amqp.core.DirectExchange;
+import org.springframework.amqp.core.Queue;
+import org.springframework.amqp.core.QueueBuilder;
+import org.springframework.amqp.rabbit.config.RetryInterceptorBuilder;
+import org.springframework.amqp.rabbit.config.SimpleRabbitListenerContainerFactory;
+import org.springframework.amqp.rabbit.connection.ConnectionFactory;
+import org.springframework.amqp.rabbit.retry.RejectAndDontRequeueRecoverer;
+import org.springframework.amqp.support.converter.MessageConverter;
+import org.springframework.amqp.support.converter.SimpleMessageConverter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -23,6 +29,9 @@ public class RabbitMQConfig {
     // Dead Letter Exchange (routes failed messages to the correct DLQ)
     public static final String DLX_EXCHANGE = "dlx.exchange";
 
+    // 7 days in milliseconds — failed messages auto-expire from DLQ after 7 days
+    private static final long DLQ_MESSAGE_TTL = 7 * 24 * 60 * 60 * 1000L;
+
     // --- Dead Letter Exchange ---
 
     @Bean
@@ -34,27 +43,28 @@ public class RabbitMQConfig {
 
     @Bean
     public Queue newSalesDlq() {
-        return QueueBuilder.durable(NEW_SALES_DLQ).build();
+        return QueueBuilder.durable(NEW_SALES_DLQ)
+                .withArgument("x-message-ttl", DLQ_MESSAGE_TTL)
+                .build();
     }
 
     @Bean
     public Queue sendEmailDlq() {
-        return QueueBuilder.durable(SEND_EMAIL_DLQ).build();
+        return QueueBuilder.durable(SEND_EMAIL_DLQ)
+                .withArgument("x-message-ttl", DLQ_MESSAGE_TTL)
+                .build();
     }
 
-    // Bind each DLQ to the dead letter exchange
+    // Bind each DLQ to the dead letter exchange using parameter injection (not
+    // direct bean calls)
     @Bean
-    public Binding newSalesDlqBinding() {
-        return BindingBuilder.bind(newSalesDlq())
-                .to(deadLetterExchange())
-                .with(NEW_SALES_QUEUE);
+    public Binding newSalesDlqBinding(Queue newSalesDlq, DirectExchange deadLetterExchange) {
+        return BindingBuilder.bind(newSalesDlq).to(deadLetterExchange).with(NEW_SALES_QUEUE);
     }
 
     @Bean
-    public Binding sendEmailDlqBinding() {
-        return BindingBuilder.bind(sendEmailDlq())
-                .to(deadLetterExchange())
-                .with(SEND_EMAIL_QUEUE);
+    public Binding sendEmailDlqBinding(Queue sendEmailDlq, DirectExchange deadLetterExchange) {
+        return BindingBuilder.bind(sendEmailDlq).to(deadLetterExchange).with(SEND_EMAIL_QUEUE);
     }
 
     // --- Main Queues ---
@@ -75,8 +85,54 @@ public class RabbitMQConfig {
                 .build();
     }
 
+    // Heartbeat queue is durable but intentionally has no DLQ.
+    // Heartbeats are monitoring-only signals consumed by Elastic Stack.
+    // A missed heartbeat is detected as a monitoring gap — it must not be
+    // replayed or dead-lettered. Losing a heartbeat is acceptable by design.
     @Bean
     public Queue heartbeatQueue() {
         return QueueBuilder.durable(HEARTBEAT_QUEUE).build();
+    }
+
+    // --- Message Converter ---
+
+    // Explicit MessageConverter pins the "always XML strings" contract for queue
+    // messages.
+    // Without this, rabbitTemplate.convertAndSend(Object) falls back to Java
+    // serialization
+    // for POJOs, silently breaking the XML contract used across all bridges.
+    @Bean
+    public MessageConverter messageConverter() {
+        return new SimpleMessageConverter();
+    }
+
+    // --- Retry + Listener Container Factory ---
+
+    // Named "rabbitListenerContainerFactory" so all @RabbitListener annotations in
+    // the application pick this factory up automatically without specifying
+    // containerFactory.
+    // - maxRetries(3): 3 retries after the first attempt = 4 total attempts
+    // - RejectAndDontRequeueRecoverer: after retries exhausted, explicitly rejects
+    // the
+    // message so RabbitMQ routes it to the dead-letter exchange → DLQ
+    // - setDefaultRequeueRejected(false): ensures any rejected message is never
+    // silently put back on the queue
+    @Bean
+    public SimpleRabbitListenerContainerFactory rabbitListenerContainerFactory(
+            ConnectionFactory connectionFactory,
+            MessageConverter messageConverter) {
+        SimpleRabbitListenerContainerFactory factory = new SimpleRabbitListenerContainerFactory();
+        factory.setConnectionFactory(connectionFactory);
+        factory.setMessageConverter(messageConverter);
+        factory.setDefaultRequeueRejected(false);
+
+        factory.setAdviceChain(
+                RetryInterceptorBuilder.stateless()
+                        .maxRetries(3)
+                        .backOffOptions(1000, 2.0, 10000)
+                        .recoverer(new RejectAndDontRequeueRecoverer())
+                        .build());
+
+        return factory;
     }
 }
